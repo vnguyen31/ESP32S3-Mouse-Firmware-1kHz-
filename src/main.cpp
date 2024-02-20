@@ -1,8 +1,8 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include "esp32-hal-adc.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include "srom.h"
+#include "pgmspace.h"
 
 // Pin definitions
 #define BUTTON1     8
@@ -15,12 +15,55 @@
 #define NCS_PIN     10
 
 // Sensor register definitions
-#define PRODUCT_ID          0x00
-#define REVISION_ID         0x01
-#define DELTA_X_L           0x03
-#define DELTA_X_H           0x04
-#define DELTA_Y_L           0x05
-#define DELTA_Y_H           0x06
+#define Product_ID  0x00
+#define Revision_ID 0x01
+#define Motion  0x02
+#define Delta_X_L 0x03
+#define Delta_X_H 0x04
+#define Delta_Y_L 0x05
+#define Delta_Y_H 0x06
+#define SQUAL 0x07
+#define Raw_Data_Sum  0x08
+#define Maximum_Raw_data  0x09
+#define Minimum_Raw_data  0x0A
+#define Shutter_Lower 0x0B
+#define Shutter_Upper 0x0C
+#define Control 0x0D
+#define Config1 0x0F
+#define Config2 0x10
+#define Angle_Tune  0x11
+#define Frame_Capture 0x12
+#define SROM_Enable 0x13
+#define Run_Downshift 0x14
+#define Rest1_Rate_Lower  0x15
+#define Rest1_Rate_Upper  0x16
+#define Rest1_Downshift 0x17
+#define Rest2_Rate_Lower  0x18
+#define Rest2_Rate_Upper  0x19
+#define Rest2_Downshift 0x1A
+#define Rest3_Rate_Lower  0x1B
+#define Rest3_Rate_Upper  0x1C
+#define Observation 0x24
+#define Data_Out_Lower  0x25
+#define Data_Out_Upper  0x26
+#define Raw_Data_Dump 0x29
+#define SROM_ID 0x2A
+#define Min_SQ_Run  0x2B
+#define Raw_Data_Threshold  0x2C
+#define Config5 0x2F
+#define Power_Up_Reset  0x3A
+#define Shutdown  0x3B
+#define Inverse_Product_ID  0x3F
+#define LiftCutoff_Tune3  0x41
+#define Angle_Snap  0x42
+#define LiftCutoff_Tune1  0x4A
+#define Motion_Burst  0x50
+#define LiftCutoff_Tune_Timeout 0x58
+#define LiftCutoff_Tune_Min_Length  0x5A
+#define SROM_Load_Burst 0x62
+#define Lift_Config 0x63
+#define Raw_Data_Burst  0x64
+#define LiftCutoff_Tune2  0x65
 
 // Scroll wheel encoder variables
 uint8_t posCurrent = 0;
@@ -31,6 +74,111 @@ uint8_t scroll = 0;
 bool button1Pressed = false;
 bool button2Pressed = false;
 
+//SPI constants
+static const int spi_Clock = 4000000;
+SPIClass *fspi = NULL;
+
+// Declare spiRead function prototype
+uint8_t spiRead(uint8_t address);
+
+//SPI read function
+uint8_t spiread(uint8_t address){
+  //chip select
+  digitalWrite(NCS_PIN, LOW); 
+
+  //send address
+  fspi->transfer(address); 
+
+  //read data from register
+  uint8_t regValue = fspi->transfer(0x00);
+
+  // Release chip select
+  digitalWrite(NCS_PIN, HIGH);
+  return regValue;
+}
+
+//SPI write function
+void spiwrite(uint8_t address, uint8_t data) {
+  // Prepare the data array
+  uint8_t txdata[2] = {static_cast<uint8_t>(address | 0x80), data};
+  
+  // Chip select
+  digitalWrite(NCS_PIN, LOW);
+
+  // Send data
+  fspi->transfer(txdata, 2); // Transfer the array with a length of 2 bytes
+
+  // Chip select high
+  digitalWrite(NCS_PIN, HIGH);
+}
+
+//Start initialization on PMW3389
+static void PMW3389_init(const uint8_t DPI){
+  //srom 
+  digitalWrite(NCS_PIN, HIGH);
+  delay(3);
+
+  //shut down first
+  digitalWrite(NCS_PIN, LOW);
+  spiwrite(0x3b, 0xb6);
+  digitalWrite(NCS_PIN, HIGH);
+  delay(300);
+
+  //reset serial port 
+  digitalWrite(NCS_PIN, LOW);
+  delayMicroseconds(40);
+  digitalWrite(NCS_PIN, HIGH);
+  delayMicroseconds(40);
+
+  //powerup reset
+  digitalWrite(NCS_PIN, LOW);
+  spiwrite(0x3a, 0x5a);
+  digitalWrite(NCS_PIN, HIGH);
+  delay(50);
+
+  //read motion registers
+  spiread(0x02);
+  spiread(0x03);
+  spiread(0x04);
+  spiread(0x05);
+  spiread(0x06);
+
+  //srom download
+  spiwrite(0x10, 0x00);
+  spiwrite(0x13, 0x1d);
+  digitalWrite(NCS_PIN, HIGH);
+  delay(10);
+  digitalWrite(NCS_PIN, LOW);
+  spiwrite(0x13, 0x18);
+  //burst download
+  digitalWrite(NCS_PIN, LOW);
+  fspi->transfer(SROM_Load_Burst | 0x80);
+  delayMicroseconds(15);
+  //send all bytes
+  unsigned char c;
+  for (uint16_t i = 0; i < firmware_length; i++){
+    c = (unsigned char)pgm_read_byte(firmware_data + i);
+    fspi->transfer(c);
+    delayMicroseconds(15);
+  }
+  spiread(SROM_ID);
+  Serial.println(SROM_ID);
+  digitalWrite(NCS_PIN, HIGH);
+  delayMicroseconds(200);
+
+  //sensor configurations, settings:
+  digitalWrite(NCS_PIN, LOW);
+  spiwrite(0x10, 0x00);
+  spiwrite(0x0d, 0x00); 
+	spiwrite(0x11, 0x00); 
+	spiwrite(0x0f, DPI); 
+	spiwrite(0x63, 0x02); 
+	spiwrite(0x2b, 0x10); 
+	spiwrite(0x2c, 0x0a); 
+	digitalWrite(NCS_PIN, HIGH);
+	delayMicroseconds(200);
+}
+
 void setup() {
   // Initialize serial communication
   Serial.begin(115200);
@@ -38,6 +186,14 @@ void setup() {
   // Setup encoder pins
   pinMode(ENCODER_A, INPUT_PULLUP);
   pinMode(ENCODER_B, INPUT_PULLUP);
+
+  //SPI initialization
+  fspi = new SPIClass(FSPI);
+  fspi->begin(SCLK_PIN, MISO_PIN, MOSI_PIN);
+  pinMode(NCS_PIN, OUTPUT);
+  fspi->setFrequency(spi_Clock);
+  fspi->beginTransaction(SPISettings(spi_Clock, MSBFIRST, SPI_MODE3));
+  PMW3389_init(15);
 }
 
 void loop() {
@@ -90,14 +246,10 @@ void loop() {
   // Update scroll value based on the change in position
   int8_t posDifference = posCurrent - posPrevious;
   if (posDifference == 2 || posDifference == -1) {
-    if (scroll < 255) {
-      Serial.println("Scrolled up");
-    }
+    Serial.println("Scrolled up");
   } 
   else if (posDifference == 1 || posDifference == -2) {
-    if (scroll > 0) {
-      Serial.println("Scrolled down");
-    }
+    Serial.println("Scrolled down");
   }
   else if (posDifference == 3 || posDifference  == -3){
     Serial.println("Data lost");
@@ -106,6 +258,7 @@ void loop() {
   // Update previous position
   posPrevious = posCurrent;
 
-  // Add a delay for stability
-  vTaskDelay(pdMS_TO_TICKS(1000));
+
 }
+
+
