@@ -5,6 +5,7 @@
 #include "esp32-hal-adc.h"
 #include "srom.h"
 #include "pgmspace.h"
+#include "esp_event.h"
 
 // Pin definitions
 #define BUTTON1     8
@@ -79,6 +80,11 @@ bool button2Pressed = false;
 //SPI constants
 static const int spi_Clock = 4000000;
 SPIClass *fspi = NULL;
+uint16_t cur_time;
+uint16_t prev_time;
+uint16_t elapsed_time;
+uint16_t deltaX = 0;
+uint16_t deltaY = 0;
 
 //USB
 USBHIDMouse AnalogMouse;
@@ -316,9 +322,32 @@ void loop() {
   posPrevious = posCurrent;
 
 
+  //SENSOR STUFF:
+  digitalWrite(NCS_PIN, LOW);
+  spiwrite(Motion, 0x01);
+  spiread(Motion);
+  int16_t xydata[4];
+  int32_t xydata_total[2];
 
- 
+  xydata[0] = (uint8_t)spiread(Delta_X_L);
+  xydata[1] = (uint8_t)spiread(Delta_X_H);
+  xydata[2] = (uint8_t)spiread(Delta_X_L);
+  xydata[3] = (uint8_t)spiread(Delta_Y_H);
+  xydata[0] = twoscomp_convert(xydata[0]);
+  xydata[1] = twoscomp_convert(xydata[1]);
+  xydata[2] = twoscomp_convert(xydata[2]);
+  xydata[3] = twoscomp_convert(xydata[3]);
+  xydata_total[0] = xydata[0] + xydata[1];
+  xydata_total[1] = xydata[2] + xydata[3];
+    if(xydata_total[0] != 0 || xydata_total[1] != 0){
+      Serial.print("x = ");
+      Serial.print(xydata_total[0]);
+      Serial.print(" | ");
+      Serial.print("y = ");
+      Serial.println(xydata_total[1]);
+    }
 
+
+  
+  delay(1);
 }
-
-
