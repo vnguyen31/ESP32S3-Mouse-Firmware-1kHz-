@@ -1,3 +1,5 @@
+#include "USB.h"
+#include "USBHIDMouse.h"
 #include <Arduino.h>
 #include <SPI.h>
 #include "esp32-hal-adc.h"
@@ -77,6 +79,9 @@ bool button2Pressed = false;
 //SPI constants
 static const int spi_Clock = 4000000;
 SPIClass *fspi = NULL;
+
+//USB
+USBHIDMouse AnalogMouse;
 
 // Declare spiRead function prototype
 uint8_t spiRead(uint8_t address);
@@ -179,6 +184,39 @@ static void PMW3389_init(const uint8_t DPI){
 	delayMicroseconds(200);
 }
 
+//display motion sensor registers:
+void register_display(void){
+  int reg_addr[7] = {0x00, 0x3F, 0x2A, 0x02};
+  const char* reg_names[] = {"Product_ID", "Inverse_Product_ID", "SROM_Version", "Motion"};
+  byte reg_results;
+
+  digitalWrite(NCS_PIN, LOW);
+
+  int reg_counter = 0;
+  for (reg_counter = 0; reg_counter < 4; reg_counter++) {
+    fspi->transfer(reg_addr[reg_counter]);
+    delay(1);
+    Serial.println("---");
+    Serial.println(reg_names[reg_counter]);
+    Serial.println(reg_addr[reg_counter], HEX);
+    reg_results = fspi->transfer(0);
+    Serial.println(reg_results, BIN);
+    Serial.println(reg_results, HEX);
+    delay(1);
+  }
+  digitalWrite(NCS_PIN, HIGH);
+}
+
+//function to convert two's complement
+int twoscomp_convert(int data){
+  if(data & 0x80){
+    data = -1 * ((data ^ 0xff) + 1);
+  }
+  return data;
+}
+
+
+
 void setup() {
   // Initialize serial communication
   Serial.begin(115200);
@@ -193,9 +231,22 @@ void setup() {
   pinMode(NCS_PIN, OUTPUT);
   fspi->setFrequency(spi_Clock);
   fspi->beginTransaction(SPISettings(spi_Clock, MSBFIRST, SPI_MODE3));
+
+  //PMW3389 initialization
   PMW3389_init(15);
+
+  //display initialization results:
+  register_display();
+
+  //initialize the USBHID interface
+  AnalogMouse.begin();
+  USB.begin();
+  Serial.println("Human Interface Device initialized!");
+  delay(2000);
+
 }
 
+////////////////////////////MAIN LOOP///////////////////////////////////////////
 void loop() {
   // Read analog values from buttons
   uint16_t button1Voltage = analogRead(BUTTON1);
@@ -206,12 +257,14 @@ void loop() {
     if (!button1Pressed) {
       Serial.println("Button1 Pressed");
       button1Pressed = true;
+      AnalogMouse.press(MOUSE_RIGHT);
     }
   } 
   else {
     if (button1Pressed && button1Voltage < 3000) {
       Serial.println("Button1 Released");
       button1Pressed = false;
+      AnalogMouse.release(MOUSE_RIGHT);
     }
   }
   // Check if Button 2 is pressed
@@ -219,14 +272,18 @@ void loop() {
     if (!button2Pressed) {
       Serial.println("Button2 Pressed");
       button2Pressed = true;
+      AnalogMouse.press(MOUSE_LEFT);
     }
   } 
   else {
     if (button2Pressed && button2Voltage < 3000) {
       Serial.println("Button2 Released");
       button2Pressed = false;
+      AnalogMouse.release(MOUSE_LEFT);
     }
   }
+
+
 
   // Read encoder state
   uint8_t Astate = digitalRead(ENCODER_A);
@@ -258,6 +315,9 @@ void loop() {
   // Update previous position
   posPrevious = posCurrent;
 
+
+
+ 
 
 }
 
