@@ -333,21 +333,21 @@ void loop() {
   xydata[1] = (uint8_t)spiread(Delta_X_H);
   xydata[2] = (uint8_t)spiread(Delta_X_L);
   xydata[3] = (uint8_t)spiread(Delta_Y_H);
+
   xydata[0] = twoscomp_convert(xydata[0]);
   xydata[1] = twoscomp_convert(xydata[1]);
   xydata[2] = twoscomp_convert(xydata[2]);
   xydata[3] = twoscomp_convert(xydata[3]);
-  xydata_total[0] = xydata[0] + xydata[1];
-  xydata_total[1] = xydata[2] + xydata[3];
-    if(xydata_total[0] != 0 || xydata_total[1] != 0){
-      Serial.print("x = ");
-      Serial.print(xydata_total[0]);
-      Serial.print(" | ");
-      Serial.print("y = ");
-      Serial.println(xydata_total[1]);
-    }
 
+  xydata_total[0] = (xydata[0] << 8) + xydata[1];
+  xydata_total[1] = (xydata[2] << 8) + xydata[3];
 
-  
+  if(xydata_total[0] != 0 || xydata_total[1] != 0){
+    Serial.print("x = ");
+    Serial.print(xydata_total[0]);
+    Serial.print(" | ");
+    Serial.print("y = ");
+    Serial.println(xydata_total[1]);
+  }  
   delay(1);
 }
