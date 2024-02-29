@@ -185,7 +185,7 @@ static void PMW3389_init(const uint8_t DPI){
   spiwrite(0x0d, 0x00); 
 	spiwrite(0x11, 0x00); 
 	spiwrite(0x0f, DPI); 
-	spiwrite(0x63, 0x02); 
+	spiwrite(0x63, 0x03); 
 	spiwrite(0x2b, 0x10); 
 	spiwrite(0x2c, 0x0a); 
 	digitalWrite(NCS_PIN, HIGH);
