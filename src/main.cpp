@@ -11,7 +11,7 @@
 #define BUTTON1     8
 #define BUTTON2     3
 #define ENCODER_A   47
-#define ENCODER_B   20
+#define ENCODER_B   21
 #define MISO_PIN    12
 #define MOSI_PIN    11
 #define SCLK_PIN    13
@@ -85,6 +85,8 @@ uint16_t prev_time;
 uint16_t elapsed_time;
 uint16_t deltaX = 0;
 uint16_t deltaY = 0;
+int16_t DELTAX = 0;
+int16_t DELTAY = 0;
 
 //USB
 USBHIDMouse AnalogMouse;
@@ -309,10 +311,12 @@ void loop() {
   // Update scroll value based on the change in position
   int8_t posDifference = posCurrent - posPrevious;
   if (posDifference == 2 || posDifference == -1) {
-    Serial.println("Scrolled up");
+    scroll += 1;
+    Serial.println("scroll up");
   } 
   else if (posDifference == 1 || posDifference == -2) {
-    Serial.println("Scrolled down");
+    scroll -= 1;
+    Serial.println("scroll down");
   }
   else if (posDifference == 3 || posDifference  == -3){
     Serial.println("Data lost");
@@ -331,23 +335,24 @@ void loop() {
 
   xydata[0] = (uint8_t)spiread(Delta_X_L);
   xydata[1] = (uint8_t)spiread(Delta_X_H);
-  xydata[2] = (uint8_t)spiread(Delta_X_L);
+  xydata[2] = (uint8_t)spiread(Delta_Y_L);
   xydata[3] = (uint8_t)spiread(Delta_Y_H);
 
-  xydata[0] = twoscomp_convert(xydata[0]);
-  xydata[1] = twoscomp_convert(xydata[1]);
-  xydata[2] = twoscomp_convert(xydata[2]);
-  xydata[3] = twoscomp_convert(xydata[3]);
+  xydata_total[0] = (xydata[1] << 8) | xydata[0];
+  xydata_total[1] = (xydata[3] << 8) | xydata[2];
 
-  xydata_total[0] = (xydata[0] << 8) + xydata[1];
-  xydata_total[1] = (xydata[2] << 8) + xydata[3];
+  DELTAX -= xydata_total[0];
+  DELTAY -= xydata_total[1];
 
-  if(xydata_total[0] != 0 || xydata_total[1] != 0){
+
+  if(xydata_total[0] != 0 || xydata_total[1] != 0 || scroll != 0){
     Serial.print("x = ");
-    Serial.print(xydata_total[0]);
+    Serial.print(DELTAX);
     Serial.print(" | ");
     Serial.print("y = ");
-    Serial.println(xydata_total[1]);
+    Serial.println(DELTAY);
+    AnalogMouse.move(DELTAX, DELTAY, scroll);
   }  
-  delay(1);
+
+  DELTAX = DELTAY = scroll = 0;
 }
