@@ -68,10 +68,16 @@
 #define Raw_Data_Burst  0x64
 #define LiftCutoff_Tune2  0x65
 
+//ADC variables
+volatile uint16_t button1Voltage;
+volatile uint16_t button2Voltage;
+
 // Scroll wheel encoder variables
 uint8_t posCurrent = 0;
 uint8_t posPrevious = 0;
 uint8_t scroll = 0;
+uint8_t Astate = 0;
+uint8_t Bstate = 0;
 
 //flag to track buttons' state
 bool button1Pressed = false;
@@ -87,6 +93,11 @@ uint16_t deltaX = 0;
 uint16_t deltaY = 0;
 int16_t DELTAX = 0;
 int16_t DELTAY = 0;
+
+//Sensor variables
+int8_t posDifference;
+int16_t xydata[4];
+int32_t xydata_total[2];
 
 //USB
 USBHIDMouse AnalogMouse;
@@ -224,10 +235,13 @@ int twoscomp_convert(int data){
 }
 
 
-
+//Single Setup Part////////////////////////////////////////////////////////////
 void setup() {
   // Initialize serial communication
   Serial.begin(115200);
+
+  //ADC configurations
+  analogSetClockDiv(1);
 
   // Setup encoder pins
   pinMode(ENCODER_A, INPUT_PULLUP);
@@ -241,7 +255,7 @@ void setup() {
   fspi->beginTransaction(SPISettings(spi_Clock, MSBFIRST, SPI_MODE3));
 
   //PMW3389 initialization
-  PMW3389_init(15);
+  PMW3389_init(7);
 
   //display initialization results:
   register_display();
@@ -254,11 +268,13 @@ void setup() {
 
 }
 
+
 ////////////////////////////MAIN LOOP///////////////////////////////////////////
 void loop() {
+
   // Read analog values from buttons
-  uint16_t button1Voltage = analogRead(BUTTON1);
-  uint16_t button2Voltage = analogRead(BUTTON2);
+  button1Voltage = analogRead(BUTTON1);
+  button2Voltage = analogRead(BUTTON2);
 
   // Check if Button1 is pressed
   if (button1Voltage > 2000) {
@@ -275,6 +291,7 @@ void loop() {
       AnalogMouse.release(MOUSE_RIGHT);
     }
   }
+
   // Check if Button 2 is pressed
   if (button2Voltage > 2000) {
     if (!button2Pressed) {
@@ -294,8 +311,8 @@ void loop() {
 
 
   // Read encoder state
-  uint8_t Astate = digitalRead(ENCODER_A);
-  uint8_t Bstate = digitalRead(ENCODER_B);
+  Astate = digitalRead(ENCODER_A);
+  Bstate = digitalRead(ENCODER_B);
 
   // Update encoder position
   if ((Astate == LOW) && (Bstate == LOW)) {
@@ -309,7 +326,7 @@ void loop() {
   }
 
   // Update scroll value based on the change in position
-  int8_t posDifference = posCurrent - posPrevious;
+  posDifference = posCurrent - posPrevious;
   if (posDifference == 2 || posDifference == -1) {
     scroll += 1;
     Serial.println("scroll up");
@@ -330,8 +347,6 @@ void loop() {
   digitalWrite(NCS_PIN, LOW);
   spiwrite(Motion, 0x01);
   spiread(Motion);
-  int16_t xydata[4];
-  int32_t xydata_total[2];
 
   xydata[0] = (uint8_t)spiread(Delta_X_L);
   xydata[1] = (uint8_t)spiread(Delta_X_H);
